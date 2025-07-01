@@ -13,7 +13,7 @@ e.g:
 *(int*)elist_get(&elist, index);
 */
 #include "string.h"
-#include "ctype.h"
+#include "stdlib.h"
 #include "econstants.h"
 
 // IMPORTANT, DO NOT CREATE A POINTER TO AN UNINITIALIZED LIST, causes seg-faults
@@ -36,7 +36,7 @@ void* elist_get(eList * list, size_t index);
 // Expands the array by a number of objects (NOT BYTES)
 int elist_expand(eList * list, size_t numOfObjects); 
 // Inserts an elements at a specific point of the USED list
-int elist_insert(eList * list, const void * object, size_t index); 
+int elist_replace(eList * list, const void * object, size_t index); 
 // Removes an item from the list
 int elist_remove(eList * list, size_t index);
 // Removes items from a list from start to stop (exclusive)
@@ -47,7 +47,7 @@ void elist_clear(eList * list);
 #ifdef E_LIST_IMPLEMENTATION
 
 int elist_create(eList * list, size_t objSize){
-    list->mem = malloc(sizeof(void*)*ESTD_DEFAULT_SIZE);
+    list->mem = (void**)malloc(sizeof(void*)*ESTD_DEFAULT_SIZE);
     if (list->mem == NULL) return ESTD_FAILURE;
 
     for (size_t i = 0; i < ESTD_DEFAULT_SIZE; ++i){
@@ -101,11 +101,14 @@ void* elist_get(eList * list, size_t index){
 
 int elist_expand(eList * list, size_t numOfObjects){
     // Creating the new memory block
-    void ** newMemBlock = malloc(sizeof(void*)*(list->maxSize+numOfObjects)); // Doubles size of array
+    void ** newMemBlock = (void**)malloc(sizeof(void*)*(list->maxSize+numOfObjects)); // Doubles size of array
     if (newMemBlock == NULL) return ESTD_FAILURE;
     for (size_t i = list->size; i < list->maxSize+numOfObjects; ++i){
         newMemBlock[i] = malloc(list->objSize);
-        if (newMemBlock[i] == NULL) return ESTD_FAILURE;
+        if (newMemBlock[i] == NULL){
+            free(newMemBlock);
+            return ESTD_FAILURE;
+        }
     }
 
     // Copying values from old block to new block, then deallocating the pointers in the old memory block
@@ -117,7 +120,7 @@ int elist_expand(eList * list, size_t numOfObjects){
     return ESTD_SUCCESS;
 }
 
-int elist_insert(eList * list, const void * object, size_t index){
+int elist_replace(eList * list, const void * object, size_t index){
     if (index < list->size){
         memcpy(list->mem[index], object, list->objSize);
         return ESTD_SUCCESS;
@@ -127,13 +130,11 @@ int elist_insert(eList * list, const void * object, size_t index){
 
 int elist_remove(eList * list, size_t index){
     if (index < list->size){
-        free(list->mem[index]);
-
         for (size_t i = index; i < list->size-1; ++i){
-            list->mem[i] = list->mem[i+1];
+            memcpy(list->mem[i], list->mem[i+1], list->objSize);
         }
 
-        list->mem[list->size-1] = NULL;
+        memset(list->mem[list->size-1], 0, list->objSize);
         --list->size;
         return ESTD_SUCCESS;
     }
@@ -142,13 +143,12 @@ int elist_remove(eList * list, size_t index){
 
 int elist_remove_range(eList * list, size_t start, size_t stop){
     if (start < list->size && stop <= list->size && start < stop){
-        for(size_t i = start; i < stop-1; ++i){
-            free(list->mem[i]);
-            list->mem[i] = malloc(list->objSize);
+        for(size_t i = start; i < stop; ++i){
+            memset(list->mem[i], 0, list->objSize);
         }
 
         size_t range = (stop-start);
-        for (size_t i = start; i < list->size-range; ++i){
+        for (size_t i = start; i+range < list->size; ++i){
             memcpy(list->mem[i], list->mem[i+range], list->objSize);
         }
 
